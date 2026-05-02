@@ -24,10 +24,19 @@ import re
 import os
 import time
 import logging
+import importlib.metadata
 from concurrent.futures import ThreadPoolExecutor
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("newpipe")
+
+# Log version at startup so HF Space logs show what yt-dlp is running
+try:
+    _YTDLP_VER = importlib.metadata.version("yt-dlp")
+except Exception:
+    _YTDLP_VER = getattr(getattr(yt_dlp, "version", None), "__version__", "unknown")
+
+log.info(f"🚀 NewPipe Service starting — yt-dlp {_YTDLP_VER}")
 
 # Thread pool — yt-dlp is blocking; run in executor to not block event loop
 _executor = ThreadPoolExecutor(max_workers=4)
@@ -224,7 +233,7 @@ def health():
         "ok":              True,
         "service":         "newpipe",
         "version":         "2.0.0",
-        "yt_dlp_version":  yt_dlp.version.__version__,
+        "yt_dlp_version":  _YTDLP_VER,
         "cache_entries":   len(_cache),
         "cache_hits":      _stats["hits"],
         "cache_misses":    _stats["misses"],
