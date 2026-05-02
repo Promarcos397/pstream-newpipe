@@ -126,20 +126,21 @@ def _search_youtube(query: str, max_results: int = 8) -> list[dict]:
 
 
 def _extract_stream(url: str) -> dict:
-    """Extract the best direct stream URL from a video page."""
+    """Extract the best direct stream URL + subtitle tracks from a video page."""
     opts = _ydl_opts_base()
-    # Prefer 720p or 1080p mp4 — browser-safe without transcoding
     opts["format"] = "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best"
     opts["merge_output_format"] = "mp4"
+    opts["writesubtitles"]      = True
+    opts["writeautomaticsub"]   = True
+    opts["subtitleslangs"]      = ["en", "en-US", "en-GB"]
 
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
         if not info:
             return {}
 
-        # Find the best single-file format (no merge needed for browser)
-        formats = info.get("formats") or []
-        # Prefer 720p mp4 with audio (progressive)
+        # Find best progressive mp4 (video+audio in one file — browser compatible)
+        formats    = info.get("formats") or []
         progressive = [
             f for f in formats
             if f.get("vcodec") != "none"
@@ -150,7 +151,32 @@ def _extract_stream(url: str) -> dict:
         best = progressive[0] if progressive else None
 
         stream_url = (best or {}).get("url") or info.get("url")
-        height      = (best or {}).get("height") or info.get("height")
+        height     = (best or {}).get("height") or info.get("height")
+
+        # Collect subtitle tracks — prefer manual, fallback to automatic captions
+        raw_subs  = info.get("subtitles") or {}
+        auto_subs = info.get("automatic_captions") or {}
+        subtitles: dict = {}
+
+        def _pick_vtt(tracks: list) -> str | None:
+            """Pick the WebVTT url from a list of format dicts."""
+            for t in tracks:
+                if t.get("ext") == "vtt":
+                    return t.get("url")
+            # fallback: first available
+            return (tracks[0].get("url") if tracks else None)
+
+        for lang in ["en", "en-US", "en-GB"]:
+            # Manual captions take priority over auto-generated
+            if lang in raw_subs and raw_subs[lang]:
+                url_vtt = _pick_vtt(raw_subs[lang])
+                if url_vtt:
+                    subtitles[lang] = {"url": url_vtt, "auto": False}
+                    continue
+            if lang in auto_subs and auto_subs[lang]:
+                url_vtt = _pick_vtt(auto_subs[lang])
+                if url_vtt:
+                    subtitles[lang] = {"url": url_vtt, "auto": True}
 
         return {
             "id":         info.get("id"),
@@ -162,6 +188,7 @@ def _extract_stream(url: str) -> dict:
             "thumb":      info.get("thumbnail"),
             "channel":    info.get("channel") or info.get("uploader"),
             "platform":   info.get("extractor_key") or "unknown",
+            "subtitles":  subtitles,
         }
 
 
