@@ -93,18 +93,30 @@ _inflight: dict[str, asyncio.Future] = {}
 
 # ─── yt-dlp helpers ───────────────────────────────────────────────────────────
 
+# Optional proxy — set PROXY_URL secret in HF Space settings to bypass HF's
+# YouTube network block (SSL: UNEXPECTED_EOF_WHILE_READING).
+# Format: http://user:pass@host:port  OR  socks5://host:port
+_PROXY_URL = os.environ.get("PROXY_URL", "").strip() or None
+if _PROXY_URL:
+    log.info(f"🌐 Using proxy: {_PROXY_URL[:30]}...")
+else:
+    log.warning("⚠️  No PROXY_URL set — HF may block direct YouTube connections")
+
 def _ydl_opts_base() -> dict:
-    return {
+    opts = {
         "quiet": True,
         "no_warnings": True,
         "skip_download": True,
         "extract_flat": False,
-        "socket_timeout": 12,
+        "socket_timeout": 15,
         "http_headers": {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             "Accept-Language": "en-US,en;q=0.9",
         },
     }
+    if _PROXY_URL:
+        opts["proxy"] = _PROXY_URL
+    return opts
 
 async def _run(fn, *args):
     loop = asyncio.get_event_loop()
